@@ -1,0 +1,100 @@
+---
+author: "Sophin Liu"
+date: "April 22, 2019"
+output:
+  pdf_document: default
+  html_document: default
+source: https://data.seattle.gov/Transportation/Collisions/vac5-r8kk
+---
+
+```{r}
+library(ggplot2)
+library(leaflet)
+library(treemap)
+library(Correlplot)
+library(tm)
+library(tidytext)
+library(tidyr)
+library(wordcloud)
+library(knitr)
+library(kableExtra)
+library(formattable)
+library(dplyr)
+library(topicmodels)
+library(magrittr)
+```
+
+```{r}
+df <-read.csv("C:/Users/Shuan_000/Desktop/IMT 561/Report 1/Collisions.csv")
+summary(df)
+```
+
+```{r}
+### What: Present traffic collision monthly patterns based on the type and count;
+### Why: Illustrate the collision changing trends in different months so that traffic policy makers can make adjustments on street design and traffic police staff arrangement earlier.
+df$Year <- substr(df$INCDATE,1,4)
+df %>% 
+  filter(!is.na(PERSONCOUNT)) %>%
+  filter(!is.na(COLLISIONTYPE))%>%
+  filter(!is.na(Year)) %>%
+  group_by(Year,COLLISIONTYPE) %>%
+  summarise(nr = length(COLLISIONTYPE)) %>%
+  ungroup() ->dc
+
+ggplot(data = dc, aes(x = Year, y = nr, colour = COLLISIONTYPE)) + geom_point() +theme_bw() + theme(legend.position = "right") + labs(x="Year", y = "Collision Number",colour ="COLLISIONTYPE")
+```
+
+```{r}
+### What: Sentiment Analysis - Present traffic collision related locations based on the frequency that this word showed up in the location column;
+### Why: Provide users a quick glance of what areas/streets are relatively more associated with collisions.
+df %>% filter(!is.na(LOCATION)) ->dfn0
+dfn0 %>% filter(LOCATION != "") -> dfn
+text <- dfn$LOCATION
+
+mydata <- Corpus(VectorSource(text))
+mydata = tm_map(mydata, content_transformer(tolower))
+mydata = tm_map(mydata, removePunctuation)
+mydata = tm_map(mydata, removeNumbers)
+mydata = tm_map(mydata,removeWords,c("ST","AND","WAY","AVE","BETWEEN","and","way","between","ave","city","market","lake","Seattle","off")) #Remove non-location related words.
+
+myDtm = TermDocumentMatrix(mydata, control = list(minWordLength=1))
+freqTerms <- findFreqTerms(myDtm,lowfreq =1)
+m <- as.matrix(myDtm)
+v <- sort(rowSums(m),decreasing = TRUE)
+myNames <- names(v)
+d <- data.frame(word = myNames, freq =v)
+wctop <- wordcloud(d$word, d$freq, min.freq =5, colors = brewer.pal(30,"Set1"))
+```
+
+```{r}
+### What: Geographic visualization of Seattle traffic collision accidents distribution
+### Why: Provide users a quick way to zoom into specific areas to detect collision count and patterns.
+df %>% 
+  filter(!is.na(Log)) %>%
+  filter(!is.na(Lat)) %>%
+  group_by(Log,Lat) %>%
+  summarise(nr = length(Log)) %>%
+  ungroup() -> dl
+
+leaflet(data = dl) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = dl$Lat, lng = dl$Log,  clusterOptions = markerClusterOptions(), color = ~pal(dl$value), weight = 1.5, opacity = 0.9, popup = paste("<br><strong>Applications: </strong>", dl$value))
+```
+
+```{r}
+### What: Fatalities patterns within different years and weather conditions
+### Why: Based on the square sizes in the chart, users can compare the fatalities changes in recent years and detect the potential relations between the count and weather conditions.
+df %>% 
+  filter(!is.na(WEATHER)) %>% 
+  group_by(Year,WEATHER) %>%
+  summarise(nr = sum(FATALITIES)) %>% 
+  ungroup() -> droad
+
+treemap(droad,
+        index = c("Year","WEATHER"),
+        type = "value",
+        vSize = "nr",
+        vColor = "nr",
+        palette = "RdBu",
+        title = "Fatalities Count based on Year and Weather Conditions")
+```
