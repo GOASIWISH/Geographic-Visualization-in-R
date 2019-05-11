@@ -25,7 +25,7 @@ library(magrittr)
 ```
 
 ```{r}
-df <-read.csv("C:/Users/Shuan_000/Desktop/IMT 561/Report 1/Collisions.csv")
+df <-read.csv(".../Collisions.csv")
 summary(df)
 ```
 
