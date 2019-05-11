@@ -1,0 +1,131 @@
+---
+title: "2019 Seattle 911 Fire Calls"
+author: "Sophin Liu"
+date: "April 21, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r}
+library(ggplot2)
+library(tidytext)
+library(tidyr)
+library(tidyverse)
+library(wordcloud)
+library(knitr)
+library(kableExtra)
+library(formattable)
+library(dplyr)
+library(rlang)
+library(tm)
+library(topicmodels)
+library(magrittr)
+library(readr)
+library(RSocrata)
+library(RCurl)
+library(rjson)
+library(RJSONIO)
+library(jsonlite)
+library(leaflet)
+library(ggmosaic)
+```
+
+```{r}
+### Data Input
+json_data <- fromJSON("https://data.seattle.gov/resource/kzjm-xkqj.json?$limit=100000&$where=datetime%20%3E=%20%272019-01-01%27")
+df <- data.frame(json_data)
+names(df)
+```
+```{r}
+head(df)
+```
+
+
+```{r}
+### What: Pull out the TOP 10 911_call types based on the call numbers;
+### Why: Illustrate the potential reasons behind high frequently calls and help people to identity how to prioritize Seattle Fire Department staff arrangement.
+df %>% 
+  filter(!is.na(type)) %>%
+  group_by(type) %>%
+  summarise(nr = length(type)) %>%
+  top_n(n=10) %>%
+  arrange(-nr) %>%
+  ungroup() ->dc
+
+ggplot(data = dc, aes(x = reorder(type, nr), y = nr)) + geom_bar(stat = "identity", fill = "steelblue", colour = "black") + geom_text(aes(label=nr), vjust=-0.3, size=3.5)+
+  theme_minimal() + coord_flip() + theme_bw(base_size =10) + labs(x="Top 10 Call Types", y = "Call #")
+```
+
+```{r}
+### What: High frequently Associated 911_calls' location names;
+### Why: Provide users a quick glance of what areas/streets are relatively more associated with 911_calls.
+df %>% filter(!is.na(address)) ->dfn0 
+dfn0 %>% filter(address != "") -> dfn 
+text <- dfn$address 
+
+mydata <- Corpus(VectorSource(text))
+mydata = tm_map(mydata, content_transformer(tolower)) 
+mydata = tm_map(mydata, removePunctuation)
+mydata = tm_map(mydata, removeNumbers)
+mydata = tm_map(mydata,removeWords,c("St","Way","Av","Way","way","city","blvd","east")) # Remove certain non-location relevant while frequently showed words.
+
+myDtm = TermDocumentMatrix(mydata, control = list(minWordLength=1))
+freqTerms <- findFreqTerms(myDtm,lowfreq =1) # Present the location names based on the street names' frequency in database.
+m <- as.matrix(myDtm)
+v <- sort(rowSums(m),decreasing = TRUE)
+myNames <- names(v)
+d <- data.frame(word = myNames, freq =v)
+wctop <- wordcloud(d$word, d$freq, min.freq =5, colors = brewer.pal(25,"Set1"))
+```
+
+```{r}
+library(plotly)
+d %>% 
+  filter(!is.na(word)) %>%
+  group_by(word) %>%
+  summarise(nr = sum(freq)) %>%
+  top_n(n=15) %>%
+  arrange(-nr) %>%
+  ungroup() ->ddd
+
+ggplot(data = ddd, aes(x = reorder(word, nr), y = nr)) + geom_bar(stat = "identity", fill = "steelblue", colour = "black") + geom_text(aes(label=nr), vjust=-0.3, size=3.5)+
+    theme_minimal() + coord_flip() + theme_bw(base_size =10) + labs(x="Top 10 Call #Types", y = "Call #")
+
+#plot_ly(ddd, x = ~nr, y = ~word, alpha = 0.3, marker = list(size = 15))
+
+#p <- plot_ly(ddd, x = ~word, y = ~nr, alpha = 0.5)
+#subplot(
+  #add_markers(p, size = ~nr, sizes = c(1,600), color = "orange",name = "custom")
+)
+```
+
+```{r fig.height= 25}
+p <- ggplot(data = ddd) +
+  geom_mosaic(aes(weight = nr, x = product(nr), fill = word))
+ggplotly(p)
+```
+
+```{r}
+df$latitude <- as.numeric(as.character(df$latitude))
+df$longitude <- as.numeric(as.character(df$longitude))
+
+df %>% 
+  filter(!is.na(latitude)) %>%
+  filter(!is.na(longitude)) %>%
+  group_by(latitude,longitude) %>%
+  summarise(nr = length(type)) %>%
+  ungroup() -> dl
+colnames(dl) <- c("latitude","longitude","value")
+bins <- c(max(dl$value),15000,10000,5000,min(dl$value))
+pal <- colorBin("RdYlGn", domain = dl$value, bins = bins)
+
+leaflet(data = dl) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = dl$latitude, lng = dl$longitude,  clusterOptions = markerClusterOptions(), color = ~pal(dl$value), weight = 1.5, opacity = 0.9, popup = paste("<br><strong>Applications: </strong>", dl$value))
+
+
+
+
+
+```
