@@ -1,0 +1,91 @@
+---
+title: "VD_REport"
+author: "Sophin Liu"
+date: "April 21, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r}
+library(ggplot2)
+library(leaflet)
+library(treemap)
+library(Correlplot)
+library(tm)
+library(tidytext)
+library(tidyr)
+library(wordcloud)
+library(knitr)
+library(kableExtra)
+library(formattable)
+library(dplyr)
+library(topicmodels)
+library(magrittr)
+library(readr)
+library(viridisLite)
+library(leaflet)
+library(lubridate)
+library(viridis)
+```
+
+```{r}
+### Data Input
+
+### This dataset is built from year 2010 to year 2019; creating a headline of the dataset gives me a general idea of how this dataset looks like. Data Source(Seattle Open Data) https://data.seattle.gov/Public-Safety/Seattle-Real-Time-Fire-911-Calls/kzjm-xkqj.
+df <-read_csv("C:/Users/Shuan_000/Desktop/IMT 561/Report 1/Seattle_Real_Time_Fire_911_Calls.csv")
+head(df)
+```
+
+```{r}
+### What: Pull out the TOP 10 911_call types based on the call numbers (unit in thousands);
+### Why: Illustrate the potential reasons behind high frequently calls and help people to identity how to prioritize Seattle Fire Department staff arrangement. 
+
+df %>% 
+  filter(!is.na(Type)) %>%
+  group_by(Type) %>%
+  summarise(nr = as.integer(length(Type)/1000)) %>%
+  top_n(n=10) %>%
+  arrange(-nr) %>%
+  ungroup() ->dc
+
+ggplot(data = dc, aes(x = reorder(Type, nr), y = nr)) + geom_bar(stat = "identity", fill = "red", colour = "black") + geom_text(aes(label=nr), vjust=-0.3, size=3.5)+
+  theme_minimal() + coord_flip() + theme_bw(base_size =10) + labs(x="Top 10 Call Types", y = "Call # (thousands)")
+```
+
+```{r}
+### What: Detect the seasonal patterns of the TOP 10 911 call number;
+### Why: Based on the changing patterns, especially the peak points, we could find out when is the busiest time for emgerency cases and thus make better plans on headcount management. 
+df$Month <- substr(df$Datetime,1,2)
+df %>% 
+  group_by(Month,Type) %>% 
+  filter(!is.na(Type)) %>%
+  filter(!is.na(Month)) %>%
+  summarise(nr = length(Type)) %>% 
+  top_n(n=10) %>%
+  #arrange(-nr) %>%
+  ungroup() -> dfmo
+
+colnames(dfmo)<-c("Month","Type of 911 fire calls","Number of calls")
+ggplot(data = dfmo, aes(x = Month, y = `Number of calls`, colour = `Type of 911 fire calls`)) + 
+   geom_line() + geom_point() + theme_bw()
+```
+
+```{r}
+### What: Geographic analysis of 911_call distribution across the city of Seattle
+### Why: Users can zoom in specific area, district and street to check the call number pattern and count. It's helpful on higher risky places identification and predication.
+
+df %>% 
+  filter(!is.na(Latitude)) %>%
+  filter(!is.na(Longitude)) %>%
+  group_by(Latitude,Longitude) %>%
+  summarise(nr = length(Type)) %>%
+  ungroup() -> dl
+colnames(dl) <- c("Latitude","Longitude","value")
+bins <- c(max(dl$value),15000,10000,5000,min(dl$value))
+pal <- colorBin("RdYlGn", domain = dl$value, bins = bins)
+
+leaflet(data = dl) %>%
+  addTiles() %>%
+  addCircleMarkers(lat = dl$Latitude, lng = dl$Longitude,  clusterOptions = markerClusterOptions(), color = ~pal(dl$value), weight = 1.5, opacity = 0.9, popup = paste("<br><strong>Applications: </strong>", dl$value))
+```
